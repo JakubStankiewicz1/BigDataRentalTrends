@@ -67,6 +67,62 @@ def parse_listing(url):
     advertiser_el = soup.select_one("div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Typ ogłoszeniodawcy:') + p")
     data["advertiser_type"] = advertiser_el.get_text(strip=True) if advertiser_el else None
 
+    # Heating
+    heating_el = soup.select_one("div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Ogrzewanie:') + p")
+    data["heating"] = heating_el.get_text(strip=True) if heating_el else None
+
+    # Floor
+    floor_el = soup.select_one("div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Piętro:') + p")
+    data["floor"] = floor_el.get_text(strip=True) if floor_el else None
+
+    # Finishing State
+    finishing_el = soup.select_one("div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Stan wykończenia:') + p")
+    data["finishing_state"] = finishing_el.get_text(strip=True) if finishing_el else None
+
+    # Availability Date
+    availability_el = soup.select_one("div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Dostępne od:') + p")
+    data["available_from"] = availability_el.get_text(strip=True) if availability_el else None
+
+    # Additional Information
+    additional_info_el = soup.select_one("div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Informacje dodatkowe:') + p")
+    data["additional_info"] = additional_info_el.get_text(strip=True) if additional_info_el else None
+
+    # Building Year
+    building_year_el = soup.select_one("div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Rok budowy:') + p")
+    data["building_year"] = building_year_el.get_text(strip=True) if building_year_el else None
+
+    # Elevator
+    elevator_el = soup.select_one("div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Winda:') + p")
+    data["elevator"] = elevator_el.get_text(strip=True) if elevator_el else None
+
+    # Building Type
+    building_type_el = soup.select_one("div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Rodzaj zabudowy:') + p")
+    data["building_type"] = building_type_el.get_text(strip=True) if building_type_el else None
+
+    # Building Material
+    building_material_el = soup.select_one("div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Materiał budynku:') + p")
+    data["building_material"] = building_material_el.get_text(strip=True) if building_material_el else None
+
+    # Windows
+    windows_el = soup.select_one("div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Okna:') + p")
+    data["windows"] = windows_el.get_text(strip=True) if windows_el else None
+
+    # Safety
+    safety_el = soup.select_one("div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Bezpieczeństwo:') + p")
+    data["safety"] = safety_el.get_text(strip=True) if safety_el else None
+
+    # Equipment
+    equipment_el = soup.select("div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Wyposażenie:') + p span")
+    data["equipment"] = ", ".join(equip.get_text(strip=True) for equip in equipment_el) if equipment_el else None
+
+    # Security
+    security_el = soup.select("div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Zabezpieczenia:') + p span")
+    data["security"] = ", ".join(sec.get_text(strip=True) for sec in security_el) if security_el else None
+
+    # Media
+    media_el = soup.select_one("div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Media:') + p")
+    data["media"] = media_el.get_text(strip=True) if media_el else None
+
     # ID (unchanged)
     id_tag = soup.find(string=lambda t: isinstance(t, str) and "ID:" in t)
     data["id"] = id_tag.split("ID:")[-1].strip() if id_tag else url.rstrip("/").split("-")[-1]
