@@ -7,6 +7,7 @@ import pandas as pd
 import time
 from datetime import datetime
 from urllib.parse import urljoin, urlparse
+import re  # Add this import for regular expressions
 
 # --------- Configuration ---------
 SEARCH_URL   = "https://www.otodom.pl/pl/oferty/wynajem/mieszkanie"
@@ -53,7 +54,12 @@ def parse_listing(url):
 
     # Rent Fee (Additional Price)
     fee_el = soup.select_one("div[data-sentry-element='AdditionalPriceWrapper']")
-    data["rent_fee"] = fee_el.get_text(strip=True) if fee_el else None
+    if fee_el:
+        fee_text = fee_el.get_text(strip=True)
+        match = re.search(r'\d+', fee_text)  # Extract only the numeric value
+        data["rent_fee"] = int(match.group()) if match else None
+    else:
+        data["rent_fee"] = None
 
     # Location
     loc_el = soup.select_one("div[data-sentry-element='Container'] a[data-sentry-element='StyledLink']")
@@ -85,7 +91,11 @@ def parse_listing(url):
 
     # Additional Information
     additional_info_el = soup.select_one("div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Informacje dodatkowe:') + p")
-    data["additional_info"] = additional_info_el.get_text(strip=True) if additional_info_el else None
+    if additional_info_el:
+        additional_info_text = additional_info_el.get_text(strip=True)
+        data["additional_info"] = ", ".join(re.split(r'(?<!\w)(?=[A-ZĄĆĘŁŃÓŚŹŻ])', additional_info_text))  # Split by uppercase letters
+    else:
+        data["additional_info"] = None
 
     # Building Year
     building_year_el = soup.select_one("div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Rok budowy:') + p")
@@ -122,6 +132,13 @@ def parse_listing(url):
     # Media
     media_el = soup.select_one("div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Media:') + p")
     data["media"] = media_el.get_text(strip=True) if media_el else None
+
+    # Description
+    description_el = soup.select("div[data-cy='adPageAdDescription'] p")
+    if description_el:
+        data["description"] = "\n".join(p.get_text(strip=True) for p in description_el)  # Each <p> on a new line
+    else:
+        data["description"] = None
 
     # ID (unchanged)
     id_tag = soup.find(string=lambda t: isinstance(t, str) and "ID:" in t)
