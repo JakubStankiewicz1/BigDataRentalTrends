@@ -1,13 +1,10 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 import requests
 from bs4 import BeautifulSoup
 import pandas as pd
 import time
 from datetime import datetime
 from urllib.parse import urljoin, urlparse
-import re  # Add this import for regular expressions
+import re 
 
 # --------- Configuration ---------
 SEARCH_URL   = "https://www.otodom.pl/pl/oferty/wynajem/mieszkanie"
