@@ -5,6 +5,7 @@ import time
 from datetime import datetime
 from urllib.parse import urljoin, urlparse
 import re 
+import os  # Added for file existence check
 
 # --------- Configuration ---------
 SEARCH_URL   = "https://www.otodom.pl/pl/oferty/wynajem/mieszkanie"
@@ -14,6 +15,12 @@ HEADERS      = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
 MAX_LISTINGS = 5
 DELAY        = 2    # seconds between requests
 OUTPUT_CSV   = "otodom_wynajem.csv"
+
+# Check if the output file already exists
+if os.path.exists(OUTPUT_CSV):
+    new_name = input(f"Plik '{OUTPUT_CSV}' już istnieje. Podaj nową nazwę pliku (lub naciśnij Enter, aby nadpisać): ").strip()
+    if new_name:
+        OUTPUT_CSV = new_name
 
 # --------- Helpers ---------
 def fetch_soup(url):
