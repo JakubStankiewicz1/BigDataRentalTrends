@@ -89,11 +89,16 @@ def parse_listing(url):
     availability_el = soup.select_one("div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Dostępne od:') + p")
     data["available_from"] = availability_el.get_text(strip=True) if availability_el else None
 
-    # Additional Information
+    # Additional Information (lepsze rozdzielanie)
     additional_info_el = soup.select_one("div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Informacje dodatkowe:') + p")
     if additional_info_el:
-        additional_info_text = additional_info_el.get_text(strip=True)
-        data["additional_info"] = ", ".join(re.split(r'(?<!\w)(?=[A-ZĄĆĘŁŃÓŚŹŻ])', additional_info_text))  # Split by uppercase letters
+        spans = additional_info_el.find_all("span")
+        if spans:
+            data["additional_info"] = ", ".join(span.get_text(strip=True) for span in spans)
+        else:
+            text = additional_info_el.get_text(strip=True)
+            items = re.split(r'[;,•·\u2022\u2023\u25E6\u2043\u2219]', text)
+            data["additional_info"] = ", ".join(item.strip() for item in items if item.strip())
     else:
         data["additional_info"] = None
 
@@ -133,17 +138,6 @@ def parse_listing(url):
     media_el = soup.select_one("div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Media:') + p")
     data["media"] = media_el.get_text(strip=True) if media_el else None
 
-    # Description
-    description_el = soup.select("div[data-cy='adPageAdDescription'] p")
-    if description_el:
-        data["description"] = "\n".join(p.get_text(strip=True) for p in description_el)  # Each <p> on a new line
-    else:
-        data["description"] = None
-
-    # ID (unchanged)
-    id_tag = soup.find(string=lambda t: isinstance(t, str) and "ID:" in t)
-    data["id"] = id_tag.split("ID:")[-1].strip() if id_tag else url.rstrip("/").split("-")[-1]
-
     # URL & timestamp (unchanged)
     data["url"] = url
     data["scrape_date"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -159,7 +153,12 @@ def main():
     for idx, link in enumerate(links,1):
         print(f"[{idx}/{len(links)}] {link}")
         try:
-            rows.append(parse_listing(link))
+            row = parse_listing(link)
+            # Uzupełnij brakujące dane domyślną wartością
+            for k, v in row.items():
+                if v is None or (isinstance(v, str) and not v.strip()):
+                    row[k] = "brak informacji"
+            rows.append(row)
         except Exception as e:
             print(f"⚠ Błąd przy {link}: {e}")
         time.sleep(DELAY)
