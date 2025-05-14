@@ -13,7 +13,7 @@ SEARCH_URL   = "https://www.otodom.pl/pl/oferty/wynajem/mieszkanie"
 HEADERS      = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                                "AppleWebKit/537.36 (KHTML, like Gecko) "
                                "Chrome/113.0.0.0 Safari/537.36"}
-DELAY        = 0.05    # seconds between requests
+DELAY        = 0    # seconds between requests
 OUTPUT_CSV   = "otodom_wynajem.csv"
 
 # Zapytaj użytkownika o limit ogłoszeń
@@ -247,11 +247,16 @@ def parse_listing(url):
     data["scrape_date"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     return data
 
-def print_progress_bar(iteration, total, length=30):
+def print_progress_bar(iteration, total, start_time, length=30):
     percent = f"{100 * (iteration / float(total)):.1f}"
     filled_length = int(length * iteration // total)
     bar = '█' * filled_length + '-' * (length - filled_length)
-    sys.stdout.write(f'\rPostęp: |{bar}| {iteration}/{total} ({percent}%)')
+    elapsed = time.time() - start_time
+    avg_time = elapsed / iteration if iteration > 0 else 0
+    remaining = int(avg_time * (total - iteration))
+    mins, secs = divmod(remaining, 60)
+    eta = f"ETA: {mins:02d}:{secs:02d}"
+    sys.stdout.write(f'\rPostęp: |{bar}| {iteration}/{total} ({percent}%) {eta}')
     sys.stdout.flush()
     if iteration == total:
         print()  # Nowa linia na końcu
@@ -264,8 +269,9 @@ def main():
 
     rows = []
     total = len(links)
+    start_time = time.time()
     for idx, link in enumerate(links, 1):
-        print_progress_bar(idx, total)
+        print_progress_bar(idx, total, start_time)
         try:
             row = parse_listing(link)
             # Uzupełnij brakujące dane domyślną wartością
