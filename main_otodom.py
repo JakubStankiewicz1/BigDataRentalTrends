@@ -1,12 +1,12 @@
-import requests
+from requests import get
 from bs4 import BeautifulSoup
-import pandas as pd
+from pandas import DataFrame
 import time
 from datetime import datetime
 from urllib.parse import urljoin, urlparse
 import re 
-import os  # Added for file existence check
-import sys
+from os import path  # Added for file existence check
+from sys import stdout
 
 # --------- Configuration ---------
 SEARCH_URL   = "https://www.otodom.pl/pl/oferty/wynajem/mieszkanie"
@@ -17,30 +17,34 @@ DELAY        = 0    # seconds between requests
 OUTPUT_CSV   = "otodom_wynajem.csv"
 
 # Zapytaj użytkownika o limit ogłoszeń
-limit_input = input("Ile ogłoszeń pobrać? (wpisz liczbę lub Enter dla wszystkich): ").strip()
-if limit_input == '' or limit_input.lower() == 'wszystkie':
-    MAX_LISTINGS = None
-else:
-    try:
-        MAX_LISTINGS = int(limit_input)
-        if MAX_LISTINGS <= 0:
-            MAX_LISTINGS = None
-    except ValueError:
+while True:
+    limit_input = input("Ile ogłoszeń pobrać? (wpisz liczbę lub Enter dla wszystkich): ").strip()
+    if limit_input == '' or limit_input.lower() == 'wszystkie':
         MAX_LISTINGS = None
+        break
+    else:
+        try:
+            MAX_LISTINGS = int(limit_input)
+            if MAX_LISTINGS <= 0:
+                raise ValueError
+            break
+        except ValueError:
+            MAX_LISTINGS = None
+            print("Nieprawidłowa liczba")
 
 # Check if the output file already exists
-if os.path.exists(OUTPUT_CSV):
+if path.exists(OUTPUT_CSV):
     new_name = input(f"Plik '{OUTPUT_CSV}' już istnieje. Podaj nową nazwę pliku (lub naciśnij Enter, aby nadpisać): ").strip()
     if new_name:
         OUTPUT_CSV = new_name
 
 # --------- Helpers ---------
-def fetch_soup(url):
-    r = requests.get(url, headers=HEADERS, timeout=10)
+def fetch_soup(url: str) -> BeautifulSoup:
+    r = get(url, headers=HEADERS, timeout=10)
     r.raise_for_status()
     return BeautifulSoup(r.text, "html.parser")
 
-def parse_location(location_str):
+def parse_location(location_str: str) -> dict[str, str | None]:
     """Parse location string into components: województwo, powiat, miasto, dzielnica, ulica"""
     if not location_str:
         return {
@@ -109,9 +113,9 @@ def parse_location(location_str):
     # Jeśli nie znaleziono dzielnicy, zostaje None
     return result
 
-def get_listing_links(max_listings=None):
+def get_listing_links(max_listings: int | None = None) -> set[str]:
     """Zwraca unikalne linki do wszystkich ofert z listingu (wszystkie strony lub do limitu)."""
-    seen, links = set(), []
+    links = set()
     page = 1
     while True:
         url = SEARCH_URL if page == 1 else f"{SEARCH_URL}?page={page}"
@@ -121,9 +125,8 @@ def get_listing_links(max_listings=None):
             href = a["href"]
             if "/pl/oferta/" in href:
                 full = urljoin("https://www.otodom.pl", href)
-                if urlparse(full).netloc.endswith("otodom.pl") and full not in seen:
-                    seen.add(full)
-                    links.append(full)
+                if urlparse(full).netloc.endswith("otodom.pl") and full not in links:
+                    links.add(full)
                     found_on_page += 1
                     if max_listings is not None and len(links) >= max_listings:
                         print(f"Zebrano {len(links)} ogłoszeń (limit osiągnięty)")
@@ -134,18 +137,43 @@ def get_listing_links(max_listings=None):
         page += 1
     return links
 
-def parse_listing(url):
+def parse_listing(url: str) -> dict[str, str | None]:
     """Parsuje szczegóły pojedynczego ogłoszenia Otodom."""
     soup = fetch_soup(url)
-    data = {}
+    data: dict[str, str | None] = {}
 
-    # Title
-    h1 = soup.select_one("h1[data-cy='adPageAdTitle']")
-    data["title"] = h1.get_text(strip=True) if h1 else None
+    datakeys_to_single_selectors = {
+        "title" : "h1[data-cy='adPageAdTitle']",
+        "price" : "strong[data-cy='adPageHeaderPrice']",
+        "deposit" : "div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Kaucja:') + p",
+        "rooms" : "div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Liczba pokoi:') + p",
+        "advertiser_type" : "div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Typ ogłoszeniodawcy:') + p",
+        "heating" : "div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Ogrzewanie:') + p",
+        "floor" : "div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Piętro:') + p",
+        "finishing_state" : "div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Stan wykończenia:') + p",
+        "available_from" : "div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Dostępne od:') + p",
+        "building_year" : "div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Rok budowy:') + p",
+        "elevator" : "div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Winda:') + p",
+        "building_type" : "div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Rodzaj zabudowy:') + p",
+        "building_material" : "div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Materiał budynku:') + p",
+        "windows" : "div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Okna:') + p",
+        "safety" : "div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Bezpieczeństwo:') + p",
+        "location" : "div[data-sentry-element='Container'] a[data-sentry-element='StyledLink']",
+    }
 
-    # Price
-    price_el = soup.select_one("strong[data-cy='adPageHeaderPrice']")
-    data["price"] = price_el.get_text(strip=True) if price_el else None
+    datakeys_to_multi_selectors = {
+        "equipment" : "div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Wyposażenie:') + p span",
+        "security" : "div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Zabezpieczenia:') + p span",
+        "media" : "div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Media:') + p span",
+    }
+
+    for key, selector in datakeys_to_single_selectors.items():
+        element = soup.select_one(selector)
+        data[key] = element.get_text(strip=True) if element else None
+
+    for key, selector in datakeys_to_multi_selectors.items():
+        elements = soup.select(selector)
+        data[key] = ", ".join(element.get_text(strip=True) for element in elements) if elements else None
 
     # Rent Fee (Additional Price)
     fee_el = soup.select_one("div[data-sentry-element='AdditionalPriceWrapper']")
@@ -156,42 +184,9 @@ def parse_listing(url):
     else:
         data["rent_fee"] = None
 
-    # Kaucja (Deposit)
-    deposit_el = soup.select_one("div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Kaucja:') + p")
-    data["deposit"] = deposit_el.get_text(strip=True) if deposit_el else None
-
-    # Location
-    loc_el = soup.select_one("div[data-sentry-element='Container'] a[data-sentry-element='StyledLink']")
-    location_str = loc_el.get_text(strip=True) if loc_el else None
-    
     # Parse location components
-    location_components = parse_location(location_str)
+    location_components = parse_location(data["location"])
     data.update(location_components)
-    data["location"] = location_str  # Keep the original location string
-
-    # Number of Rooms
-    rooms_el = soup.select_one("div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Liczba pokoi:') + p")
-    data["rooms"] = rooms_el.get_text(strip=True) if rooms_el else None
-
-    # Advertiser Type
-    advertiser_el = soup.select_one("div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Typ ogłoszeniodawcy:') + p")
-    data["advertiser_type"] = advertiser_el.get_text(strip=True) if advertiser_el else None
-
-    # Heating
-    heating_el = soup.select_one("div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Ogrzewanie:') + p")
-    data["heating"] = heating_el.get_text(strip=True) if heating_el else None
-
-    # Floor
-    floor_el = soup.select_one("div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Piętro:') + p")
-    data["floor"] = floor_el.get_text(strip=True) if floor_el else None
-
-    # Finishing State
-    finishing_el = soup.select_one("div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Stan wykończenia:') + p")
-    data["finishing_state"] = finishing_el.get_text(strip=True) if finishing_el else None
-
-    # Availability Date
-    availability_el = soup.select_one("div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Dostępne od:') + p")
-    data["available_from"] = availability_el.get_text(strip=True) if availability_el else None
 
     # Additional Information (lepsze rozdzielanie)
     additional_info_el = soup.select_one("div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Informacje dodatkowe:') + p")
@@ -206,48 +201,13 @@ def parse_listing(url):
     else:
         data["additional_info"] = None
 
-    # Building Year
-    building_year_el = soup.select_one("div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Rok budowy:') + p")
-    data["building_year"] = building_year_el.get_text(strip=True) if building_year_el else None
-
-    # Elevator
-    elevator_el = soup.select_one("div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Winda:') + p")
-    data["elevator"] = elevator_el.get_text(strip=True) if elevator_el else None
-
-    # Building Type
-    building_type_el = soup.select_one("div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Rodzaj zabudowy:') + p")
-    data["building_type"] = building_type_el.get_text(strip=True) if building_type_el else None
-
-    # Building Material
-    building_material_el = soup.select_one("div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Materiał budynku:') + p")
-    data["building_material"] = building_material_el.get_text(strip=True) if building_material_el else None
-
-    # Windows
-    windows_el = soup.select_one("div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Okna:') + p")
-    data["windows"] = windows_el.get_text(strip=True) if windows_el else None
-
-    # Safety
-    safety_el = soup.select_one("div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Bezpieczeństwo:') + p")
-    data["safety"] = safety_el.get_text(strip=True) if safety_el else None
-
-    # Equipment
-    equipment_el = soup.select("div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Wyposażenie:') + p span")
-    data["equipment"] = ", ".join(equip.get_text(strip=True) for equip in equipment_el) if equipment_el else None
-
-    # Security
-    security_el = soup.select("div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Zabezpieczenia:') + p span")
-    data["security"] = ", ".join(sec.get_text(strip=True) for sec in security_el) if security_el else None
-
-    # Media
-    media_el = soup.select_one("div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Media:') + p")
-    data["media"] = media_el.get_text(strip=True) if media_el else None
-
     # URL & timestamp (unchanged)
     data["url"] = url
     data["scrape_date"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
     return data
 
-def print_progress_bar(iteration, total, start_time, length=30):
+def print_progress_bar(iteration: int, total: int, start_time: float, length: int = 30):
     percent = f"{100 * (iteration / float(total)):.1f}"
     filled_length = int(length * iteration // total)
     bar = '█' * filled_length + '-' * (length - filled_length)
@@ -256,8 +216,8 @@ def print_progress_bar(iteration, total, start_time, length=30):
     remaining = int(avg_time * (total - iteration))
     mins, secs = divmod(remaining, 60)
     eta = f"ETA: {mins:02d}:{secs:02d}"
-    sys.stdout.write(f'\rPostęp: |{bar}| {iteration}/{total} ({percent}%) {eta}')
-    sys.stdout.flush()
+    stdout.write(f'\rPostęp: |{bar}| {iteration}/{total} ({percent}%) {eta}')
+    stdout.flush()
     if iteration == total:
         print()  # Nowa linia na końcu
 
@@ -283,7 +243,7 @@ def main():
             print(f"\n⚠ Błąd przy {link}: {e}")
         time.sleep(DELAY)
 
-    df = pd.DataFrame(rows)
+    df = DataFrame(rows)
     # Mapowanie nazw kolumn na polskie
     polish_columns = {
         'title': 'tytuł',
