@@ -12,7 +12,7 @@ SEARCH_URL   = "https://www.otodom.pl/pl/oferty/wynajem/mieszkanie"
 HEADERS      = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                                "AppleWebKit/537.36 (KHTML, like Gecko) "
                                "Chrome/113.0.0.0 Safari/537.36"}
-MAX_LISTINGS = 5
+MAX_LISTINGS = 35
 DELAY        = 0.05    # seconds between requests
 OUTPUT_CSV   = "otodom_wynajem.csv"
 
@@ -38,7 +38,6 @@ def parse_location(location_str):
             'dzielnica': None,
             'ulica': None
         }
-    
     parts = [part.strip() for part in location_str.split(',')]
     n = len(parts)
     result = {
@@ -74,12 +73,27 @@ def parse_location(location_str):
             ulica_idx = i
             break
     # Dzielnica
-    if result['ulica'] and ulica_idx > 0:
-        # Dzielnica to element przed ulicą
-        result['dzielnica'] = parts[ulica_idx - 1]
+    if result['ulica']:
+        # Jeśli ulica jest pierwszym elementem, dzielnica = brak informacji
+        if ulica_idx == 0:
+            result['dzielnica'] = None
+        # Jeśli jest coś przed ulicą i nie jest to miasto ani powiat, to to jest dzielnica
+        elif ulica_idx > 0:
+            # Sprawdzamy, czy element przed ulicą nie jest miastem ani powiatem
+            dzielnica_candidate = parts[ulica_idx - 1]
+            if (miasto_idx is not None and ulica_idx - 1 == miasto_idx) or (powiat_idx is not None and ulica_idx - 1 == powiat_idx):
+                result['dzielnica'] = None
+            elif not dzielnica_candidate.startswith('ul.'):
+                result['dzielnica'] = dzielnica_candidate
+            else:
+                result['dzielnica'] = None
     elif miasto_idx is not None and miasto_idx > 0:
-        # Jeśli nie ma ulicy, a są co najmniej 3 elementy, dzielnica to element przed miastem
-        result['dzielnica'] = parts[miasto_idx - 1]
+        # Jeśli nie ma ulicy, a są co najmniej 3 elementy, dzielnica to element przed miastem, jeśli nie jest ulicą
+        dzielnica_candidate = parts[miasto_idx - 1]
+        if not dzielnica_candidate.startswith('ul.'):
+            result['dzielnica'] = dzielnica_candidate
+        else:
+            result['dzielnica'] = None
     # Jeśli nie znaleziono dzielnicy, zostaje None
     return result
 
@@ -119,6 +133,10 @@ def parse_listing(url):
         data["rent_fee"] = int(match.group()) if match else None
     else:
         data["rent_fee"] = None
+
+    # Kaucja (Deposit)
+    deposit_el = soup.select_one("div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Kaucja:') + p")
+    data["deposit"] = deposit_el.get_text(strip=True) if deposit_el else None
 
     # Location
     loc_el = soup.select_one("div[data-sentry-element='Container'] a[data-sentry-element='StyledLink']")
@@ -231,8 +249,9 @@ def main():
     # Mapowanie nazw kolumn na polskie
     polish_columns = {
         'title': 'tytuł',
-        'price': 'cena',
-        'rent_fee': 'opłata dodatkowa',
+        'price': 'miesięcznie',
+        'rent_fee': 'czynsz',
+        'deposit': 'kaucja',
         'wojewodztwo': 'województwo',
         'powiat': 'powiat',
         'miasto': 'miasto',
