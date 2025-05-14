@@ -35,10 +35,23 @@ if os.path.exists(OUTPUT_CSV):
         OUTPUT_CSV = new_name
 
 # --------- Helpers ---------
-def fetch_soup(url):
-    r = requests.get(url, headers=HEADERS, timeout=10)
-    r.raise_for_status()
-    return BeautifulSoup(r.text, "html.parser")
+def fetch_soup(url, retries=5, delay=0.5):
+    """Fetch the soup object for a given URL with retry logic."""
+    for attempt in range(retries):
+        try:
+            r = requests.get(url, headers=HEADERS, timeout=10)
+            r.raise_for_status()
+            return BeautifulSoup(r.text, "html.parser")
+        except requests.exceptions.HTTPError as e:
+            if attempt < retries - 1:
+                print(f"⚠ HTTPError: {e}. Retrying in {delay} seconds... (Attempt {attempt + 1}/{retries})")
+                time.sleep(delay)
+            else:
+                print(f"❌ Failed to fetch {url} after {retries} attempts. Skipping.")
+                return None
+        except requests.exceptions.RequestException as e:
+            print(f"⚠ RequestException: {e}. Skipping {url}.")
+            return None
 
 def parse_location(location_str):
     """Parse location string into components: województwo, powiat, miasto, dzielnica, ulica"""
@@ -116,6 +129,9 @@ def get_listing_links(max_listings=None):
     while True:
         url = SEARCH_URL if page == 1 else f"{SEARCH_URL}?page={page}"
         soup = fetch_soup(url)
+        if not soup:
+            print(f"⚠ Skipping page {page} due to fetch failure.")
+            break  # Stop if a page fails to load
         found_on_page = 0
         for a in soup.find_all("a", href=True):
             href = a["href"]
