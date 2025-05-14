@@ -13,7 +13,7 @@ HEADERS      = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                                "AppleWebKit/537.36 (KHTML, like Gecko) "
                                "Chrome/113.0.0.0 Safari/537.36"}
 MAX_LISTINGS = 5
-DELAY        = 2    # seconds between requests
+DELAY        = 0.05    # seconds between requests
 OUTPUT_CSV   = "otodom_wynajem.csv"
 
 # Check if the output file already exists
@@ -27,6 +27,61 @@ def fetch_soup(url):
     r = requests.get(url, headers=HEADERS, timeout=10)
     r.raise_for_status()
     return BeautifulSoup(r.text, "html.parser")
+
+def parse_location(location_str):
+    """Parse location string into components: województwo, powiat, miasto, dzielnica, ulica"""
+    if not location_str:
+        return {
+            'wojewodztwo': None,
+            'powiat': None,
+            'miasto': None,
+            'dzielnica': None,
+            'ulica': None
+        }
+    
+    parts = [part.strip() for part in location_str.split(',')]
+    n = len(parts)
+    result = {
+        'wojewodztwo': None,
+        'powiat': None,
+        'miasto': None,
+        'dzielnica': None,
+        'ulica': None
+    }
+    if n == 0:
+        return result
+    # Województwo
+    result['wojewodztwo'] = parts[-1]
+    # Powiat (jeśli drugi od końca jest z małej litery)
+    powiat_idx = None
+    if n > 1 and parts[-2].islower():
+        result['powiat'] = parts[-2]
+        powiat_idx = n - 2
+    # Miasto
+    if powiat_idx is not None and n > 2:
+        result['miasto'] = parts[-3]
+        miasto_idx = n - 3
+    elif n > 1:
+        result['miasto'] = parts[-2]
+        miasto_idx = n - 2
+    else:
+        miasto_idx = None
+    # Ulica
+    ulica_idx = None
+    for i, part in enumerate(parts):
+        if part.startswith('ul.'):
+            result['ulica'] = part
+            ulica_idx = i
+            break
+    # Dzielnica
+    if result['ulica'] and ulica_idx > 0:
+        # Dzielnica to element przed ulicą
+        result['dzielnica'] = parts[ulica_idx - 1]
+    elif miasto_idx is not None and miasto_idx > 0:
+        # Jeśli nie ma ulicy, a są co najmniej 3 elementy, dzielnica to element przed miastem
+        result['dzielnica'] = parts[miasto_idx - 1]
+    # Jeśli nie znaleziono dzielnicy, zostaje None
+    return result
 
 def get_listing_links():
     """Zwraca unikalne linki do MAX_LISTINGS ofert z listingu."""
@@ -67,7 +122,12 @@ def parse_listing(url):
 
     # Location
     loc_el = soup.select_one("div[data-sentry-element='Container'] a[data-sentry-element='StyledLink']")
-    data["location"] = loc_el.get_text(strip=True) if loc_el else None
+    location_str = loc_el.get_text(strip=True) if loc_el else None
+    
+    # Parse location components
+    location_components = parse_location(location_str)
+    data.update(location_components)
+    data["location"] = location_str  # Keep the original location string
 
     # Number of Rooms
     rooms_el = soup.select_one("div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Liczba pokoi:') + p")
