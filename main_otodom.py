@@ -228,6 +228,37 @@ def main():
         time.sleep(DELAY)
 
     df = pd.DataFrame(rows)
+    # Mapowanie nazw kolumn na polskie
+    polish_columns = {
+        'title': 'tytuł',
+        'price': 'cena',
+        'rent_fee': 'opłata dodatkowa',
+        'wojewodztwo': 'województwo',
+        'powiat': 'powiat',
+        'miasto': 'miasto',
+        'dzielnica': 'dzielnica',
+        'ulica': 'ulica',
+        'location': 'lokalizacja',
+        'rooms': 'liczba pokoi',
+        'advertiser_type': 'typ ogłoszeniodawcy',
+        'heating': 'ogrzewanie',
+        'floor': 'piętro',
+        'finishing_state': 'stan wykończenia',
+        'available_from': 'dostępne od',
+        'additional_info': 'informacje dodatkowe',
+        'building_year': 'rok budowy',
+        'elevator': 'winda',
+        'building_type': 'rodzaj zabudowy',
+        'building_material': 'materiał budynku',
+        'windows': 'okna',
+        'safety': 'bezpieczeństwo',
+        'equipment': 'wyposażenie',
+        'security': 'zabezpieczenia',
+        'media': 'media',
+        'url': 'url',
+        'scrape_date': 'data_pobrania'
+    }
+    df = df.rename(columns=polish_columns)
     df.to_csv(OUTPUT_CSV, index=False, encoding="utf-8-sig")
     print(f"\n✅ Zapisano dane do '{OUTPUT_CSV}'")
 
