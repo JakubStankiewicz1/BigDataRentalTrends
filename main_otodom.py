@@ -6,15 +6,27 @@ from datetime import datetime
 from urllib.parse import urljoin, urlparse
 import re 
 import os  # Added for file existence check
+import sys
 
 # --------- Configuration ---------
 SEARCH_URL   = "https://www.otodom.pl/pl/oferty/wynajem/mieszkanie"
 HEADERS      = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                                "AppleWebKit/537.36 (KHTML, like Gecko) "
                                "Chrome/113.0.0.0 Safari/537.36"}
-MAX_LISTINGS = 35
 DELAY        = 0.05    # seconds between requests
 OUTPUT_CSV   = "otodom_wynajem.csv"
+
+# Zapytaj użytkownika o limit ogłoszeń
+limit_input = input("Ile ogłoszeń pobrać? (wpisz liczbę lub Enter dla wszystkich): ").strip()
+if limit_input == '' or limit_input.lower() == 'wszystkie':
+    MAX_LISTINGS = None
+else:
+    try:
+        MAX_LISTINGS = int(limit_input)
+        if MAX_LISTINGS <= 0:
+            MAX_LISTINGS = None
+    except ValueError:
+        MAX_LISTINGS = None
 
 # Check if the output file already exists
 if os.path.exists(OUTPUT_CSV):
@@ -97,19 +109,29 @@ def parse_location(location_str):
     # Jeśli nie znaleziono dzielnicy, zostaje None
     return result
 
-def get_listing_links():
-    """Zwraca unikalne linki do MAX_LISTINGS ofert z listingu."""
-    soup = fetch_soup(SEARCH_URL)
+def get_listing_links(max_listings=None):
+    """Zwraca unikalne linki do wszystkich ofert z listingu (wszystkie strony lub do limitu)."""
     seen, links = set(), []
-    for a in soup.find_all("a", href=True):
-        href = a["href"]
-        if "/pl/oferta/" in href:
-            full = urljoin("https://www.otodom.pl", href)
-            if urlparse(full).netloc.endswith("otodom.pl") and full not in seen:
-                seen.add(full)
-                links.append(full)
-                if len(links) >= MAX_LISTINGS:
-                    break
+    page = 1
+    while True:
+        url = SEARCH_URL if page == 1 else f"{SEARCH_URL}?page={page}"
+        soup = fetch_soup(url)
+        found_on_page = 0
+        for a in soup.find_all("a", href=True):
+            href = a["href"]
+            if "/pl/oferta/" in href:
+                full = urljoin("https://www.otodom.pl", href)
+                if urlparse(full).netloc.endswith("otodom.pl") and full not in seen:
+                    seen.add(full)
+                    links.append(full)
+                    found_on_page += 1
+                    if max_listings is not None and len(links) >= max_listings:
+                        print(f"Zebrano {len(links)} ogłoszeń (limit osiągnięty)")
+                        return links
+        if found_on_page == 0:
+            break  # Brak nowych ogłoszeń na stronie, kończymy
+        print(f"Zebrano {len(links)} ogłoszeń (strona {page})")
+        page += 1
     return links
 
 def parse_listing(url):
@@ -225,15 +247,25 @@ def parse_listing(url):
     data["scrape_date"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     return data
 
+def print_progress_bar(iteration, total, length=30):
+    percent = f"{100 * (iteration / float(total)):.1f}"
+    filled_length = int(length * iteration // total)
+    bar = '█' * filled_length + '-' * (length - filled_length)
+    sys.stdout.write(f'\rPostęp: |{bar}| {iteration}/{total} ({percent}%)')
+    sys.stdout.flush()
+    if iteration == total:
+        print()  # Nowa linia na końcu
+
 # --------- Main ---------
 def main():
     print("▶ Pobieranie linków z Otodom...")
-    links = get_listing_links()
+    links = get_listing_links(MAX_LISTINGS)
     print(f"✔ Znaleziono {len(links)} ofert. Scrapuję szczegóły...\n")
 
     rows = []
-    for idx, link in enumerate(links,1):
-        print(f"[{idx}/{len(links)}] {link}")
+    total = len(links)
+    for idx, link in enumerate(links, 1):
+        print_progress_bar(idx, total)
         try:
             row = parse_listing(link)
             # Uzupełnij brakujące dane domyślną wartością
@@ -242,7 +274,7 @@ def main():
                     row[k] = "brak informacji"
             rows.append(row)
         except Exception as e:
-            print(f"⚠ Błąd przy {link}: {e}")
+            print(f"\n⚠ Błąd przy {link}: {e}")
         time.sleep(DELAY)
 
     df = pd.DataFrame(rows)
