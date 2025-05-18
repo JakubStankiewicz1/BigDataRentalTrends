@@ -159,6 +159,7 @@ def parse_listing(url: str) -> dict[str, str | None]:
         "windows" : "div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Okna:') + p",
         "safety" : "div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Bezpieczeństwo:') + p",
         "location" : "div[data-sentry-element='Container'] a[data-sentry-element='StyledLink']",
+        "area": "div[data-sentry-element='ItemGridContainer'] p:-soup-contains('Powierzchnia:') + p",
     }
 
     datakeys_to_multi_selectors = {
@@ -169,7 +170,12 @@ def parse_listing(url: str) -> dict[str, str | None]:
 
     for key, selector in datakeys_to_single_selectors.items():
         element = soup.select_one(selector)
-        data[key] = element.get_text(strip=True) if element else None
+        if key == "area" and element:
+            # Wyciągnij tylko liczbę (może być float) z tekstu np. "27.4 m²"
+            match = re.search(r"[\d,.]+", element.get_text(strip=True).replace(",", "."))
+            data[key] = float(match.group()) if match else None
+        else:
+            data[key] = element.get_text(strip=True) if element else None
 
     for key, selector in datakeys_to_multi_selectors.items():
         elements = soup.select(selector)
@@ -250,6 +256,7 @@ def main():
         'price': 'miesięcznie',
         'rent_fee': 'czynsz',
         'deposit': 'kaucja',
+        'area': 'powierzchnia',  # Dodano powierzchnię
         'wojewodztwo': 'województwo',
         'powiat': 'powiat',
         'miasto': 'miasto',
