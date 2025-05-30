@@ -132,40 +132,95 @@ def pie_advertiser_type(df: pd.DataFrame, show: bool = True):
     return fig
 
 
-def trend_over_time(df: pd.DataFrame, freq: str = "W", show: bool = True):
-    """Trend średniej ceny w czasie; domyślnie tygodniowo (freq='W'), można 'M'."""
-    if df["data_pobrania"].isna().all():
-        raise ValueError("Kolumna 'data_pobrania' pusta lub niepoprawna")
-    ts = df.set_index("data_pobrania")["miesięcznie_num"].resample(freq).mean()
+# ─────────────────────────────────────────────────────────────
+# ── NOWE FUNKCJE – MAPY / BAR CHART + HISTOGRAM  ─────────────
+# ─────────────────────────────────────────────────────────────
+import warnings
 
-    fig, ax = plt.subplots()
-    ts.plot(ax=ax, marker="o")
-    ax.set_title(f"Średnia cena najmu w czasie ({freq})")
-    ax.set_xlabel("Data")
-    ax.set_ylabel("Cena [PLN]")
-    ax.yaxis.set_major_formatter(StrMethodFormatter("{x:,.0f}"))
-    if show:
-        plt.show()
-    return fig
+def _plot_or_map(grouped, value_label: str, cmap: str = "Blues", show: bool = True):
+    """
+    Jeżeli dostępne jest GeoPandas + shapefile PL (województwa), rysuje mapę choropleth.
+    W przeciwnym razie – zwykły wykres słupkowy.
+    """
+    try:
+        import geopandas as gpd
+        shp = gpd.read_file(gpd.datasets.get_path("naturalearth_lowres"))
+        # naturalearth nie ma PL województw – próbujemy user-supplied:
+        voiv_path = Path("wojewodztwa.shp")
+        if voiv_path.exists():
+            shp = gpd.read_file(voiv_path)
+        else:
+            raise FileNotFoundError
+        # Normalizujemy kolumnę z nazwą województwa
+        name_col = next(c for c in shp.columns if "name" in c.lower())
+        shp["wojewodztwo"] = (
+            shp[name_col]
+            .str.replace("województwo", "", case=False, regex=False)
+            .str.strip()
+            .str.capitalize()
+        )
 
-
-def corr_heatmap(df: pd.DataFrame, show: bool = True):
-    """Heat-mapa korelacji dla wybranych numerycznych kolumn."""
-    num_cols = ["miesięcznie_num", "czynsz_num", "kaucja_num",
-                "powierzchnia_num", "cena_m2", "pokoje_num"]
-    existing = [c for c in num_cols if c in df.columns]
-    corr = df[existing].corr()
-
-    fig, ax = plt.subplots()
-    im = ax.imshow(corr, cmap="coolwarm", vmin=-1, vmax=1)
-    ax.set_xticks(range(len(existing)), labels=existing, rotation=45, ha="right")
-    ax.set_yticks(range(len(existing)), labels=existing)
-    fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-    ax.set_title("Macierz korelacji")
-    if show:
+        g = shp.merge(grouped, how="left", on="wojewodztwo")
+        fig, ax = plt.subplots(figsize=(7, 7))
+        g.plot(column=value_label, ax=ax, legend=True,
+               legend_kwds={"label": value_label, "orientation": "vertical"},
+               edgecolor="black", linewidth=0.4, cmap=cmap, missing_kwds={
+                   "color": "lightgrey",
+                   "label": "Brak danych"})
+        ax.set_axis_off()
+        ax.set_title(f"{value_label} – mapa województw")
+        if show:
+            plt.show()
+        return fig
+    except Exception as e:
+        # cicho przechodzimy na słupki
+        warnings.warn(f"Mapa nie została wygenerowana ({e}). Pokazuję wykres słupkowy.")
+        fig, ax = plt.subplots()
+        grouped.sort_values(ascending=False).plot(kind="bar", ax=ax, color="#4a90e2")
+        ax.set_ylabel(value_label)
+        ax.set_xlabel("Województwo")
+        ax.set_title(value_label)
+        ax.yaxis.set_major_formatter(StrMethodFormatter("{x:,.0f}"))
+        plt.xticks(rotation=45, ha="right")
         plt.tight_layout()
+        if show:
+            plt.show()
+        return fig
+
+
+def map_or_bar_avg_price(df: pd.DataFrame, show: bool = True):
+    """Średnia *cena* najmu w województwach (mapa lub bar)."""
+    grouped = df.groupby("województwo")["miesięcznie_num"].mean().round(0).dropna()
+    grouped.name = "Średnia cena [PLN]"
+    return _plot_or_map(grouped, grouped.name, cmap="Reds", show=show)
+
+
+def map_or_bar_avg_price_m2(df: pd.DataFrame, show: bool = True):
+    """Średnia *cena za m²* w województwach (mapa lub bar)."""
+    grouped = df.groupby("województwo")["cena_m2"].mean().round(0).dropna()
+    grouped.name = "Średnia cena za m² [PLN]"
+    return _plot_or_map(grouped, grouped.name, cmap="Oranges", show=show)
+
+
+def hist_rent_city(df: pd.DataFrame, city: str, bins: int = 40, show: bool = True):
+    """
+    Histogram cen dla wskazanego miasta (argument *city* – np. 'Warszawa').
+    Jeśli miasto nie występuje, zgłasza wyjątek.
+    """
+    subset = df[df["miasto"].str.lower() == city.lower()]
+    if subset.empty:
+        raise ValueError(f"Brak ogłoszeń dla miasta: {city}")
+    fig, ax = plt.subplots()
+    subset["miesięcznie_num"].hist(bins=bins, ax=ax, edgecolor="black")
+    ax.set_title(f"Rozkład cen najmu – {city.capitalize()}")
+    ax.set_xlabel("Cena [PLN]")
+    ax.set_ylabel("Liczba ofert")
+    ax.xaxis.set_major_formatter(StrMethodFormatter("{x:,.0f}"))
+    if show:
         plt.show()
     return fig
+# ─────────────────────────────────────────────────────────────
+# ── KONIEC NOWYCH FUNKCJI ────────────────────────────────────
 
 
 # ─────────────────────────────────────────────────────────────
@@ -180,5 +235,7 @@ if __name__ == "__main__":
     boxplot_city(df, top_n=10)
     bar_price_by_rooms(df)
     pie_advertiser_type(df)
-    #trend_over_time(df, freq="W")
-    #corr_heatmap(df)
+
+    map_or_bar_avg_price(df)
+    map_or_bar_avg_price_m2(df)
+    hist_rent_city(df, "Poznań")
