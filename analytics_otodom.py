@@ -13,8 +13,8 @@ CSV_PATH = Path("otodom_wynajem.csv")   # zmień, jeśli plik jest gdzie indziej
 # ─────────────────────────────────────────────────────────────
 def load_and_clean(csv_path: Path = CSV_PATH) -> pd.DataFrame:
     """
-    Wczytuje CSV z Otodom, czyści ceny, czynsz, kaucję i powierzchnię
-    oraz dorzuca parę zmiennych pomocniczych.
+    Wczytuje CSV z Otodom, czyści ceny, czynsz, kaucję i powierzchnię,
+    usuwa skrajne wartości cenowe oraz dorzuca parę zmiennych pomocniczych.
     """
     df = pd.read_csv(csv_path)
 
@@ -32,10 +32,16 @@ def load_and_clean(csv_path: Path = CSV_PATH) -> pd.DataFrame:
         if col in df.columns:
             df[col + "_num"] = df[col].apply(to_number)
 
+    # Odrzucenie skrajnych 5% wartości miesięcznej ceny najmu
+    if "miesięcznie_num" in df.columns:
+        low = df["miesięcznie_num"].quantile(0.05)
+        high = df["miesięcznie_num"].quantile(0.95)
+        df = df[(df["miesięcznie_num"] >= low) & (df["miesięcznie_num"] <= high)]
+
     # Cena za metr
     df["cena_m2"] = df["miesięcznie_num"] / df["powierzchnia_num"]
 
-    # Liczba pokoi jako int
+    # Liczba pokoi jako float
     if "liczba pokoi" in df.columns:
         df["pokoje_num"] = df["liczba pokoi"].str.extract(r"(\d+)").astype(float)
 
