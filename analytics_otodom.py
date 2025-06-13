@@ -123,6 +123,22 @@ def bar_price_by_rooms(df: pd.DataFrame, show: bool = True):
         plt.show()
     return fig
 
+def bar_count_by_rooms(df: pd.DataFrame, show: bool = True):
+    """Liczba ofert najmu wg liczby pokoi."""
+    counts = df["pokoje_num"].value_counts().sort_index()
+
+    fig, ax = plt.subplots()
+    counts.plot(kind="bar", ax=ax, color="#5DADE2", edgecolor="black")
+    ax.set_title("Liczba ofert wg liczby pokoi")
+    ax.set_xlabel("Liczba pokoi")
+    ax.set_ylabel("Liczba ogłoszeń")
+    ax.yaxis.set_major_formatter(StrMethodFormatter("{x:,.0f}"))
+    plt.xticks(rotation=0)
+    plt.tight_layout()
+    if show:
+        plt.show()
+    return fig
+
 
 def pie_advertiser_type(df: pd.DataFrame, show: bool = True):
     """Udział typów ogłoszeniodawcy."""
@@ -236,12 +252,14 @@ if __name__ == "__main__":
     df = load_and_clean()
 
     # Odkomentuj, aby wygenerować interesujące Cię wykresy:
-    hist_rent(df)
-    scatter_price_area(df)
-    boxplot_city(df, top_n=10)
+    #hist_rent(df)
+    #scatter_price_area(df)
+    #boxplot_city(df, top_n=10)
     bar_price_by_rooms(df)
-    pie_advertiser_type(df)
+    bar_count_by_rooms(df)
 
-    map_or_bar_avg_price(df)
-    map_or_bar_avg_price_m2(df)
-    hist_rent_city(df, "Poznań")
+    #pie_advertiser_type(df)
+
+    #map_or_bar_avg_price(df)
+    #map_or_bar_avg_price_m2(df)
+    #hist_rent_city(df, "Poznań")
